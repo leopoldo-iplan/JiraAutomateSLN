@@ -140,6 +140,113 @@ def index():
     return render_template('index.html', user_info=user_info)
 
 
+# app.py
+# ... (importações e código anterior) ...
+
+@app.route('/search_issues', methods=['POST'])
+@login_required # Protege a rota de busca
+def search_jira_issues():
+    """Recebe JQL via POST e busca issues usando a API v2 do Jira."""
+
+    jira_instance_url = session['jira_instance_url']
+    email = session['jira_email']
+    api_token = session['jira_api_token']
+
+    try:
+        data = request.get_json()
+        jql_query = data.get('jql')
+
+        if not jql_query:
+            return jsonify({"error": "Consulta JQL não fornecida."}), 400
+
+        # API v2 endpoint for search
+        search_url = f"{jira_instance_url}/rest/api/2/search"
+
+        # Parâmetros da requisição GET para a API do Jira
+        params = {
+            'jql': jql_query,
+            # Campos que queremos retornar (otimização)
+            'fields': 'key,summary,status,assignee,issuetype',
+            'maxResults': 100 # Limita o número de resultados (ajuste conforme necessário)
+            # 'startAt': 0 # Para paginação futura
+        }
+
+        headers = {"Accept": "application/json"}
+        auth = HTTPBasicAuth(email, api_token)
+
+        # Faz a requisição GET para a API do Jira
+        response = requests.get(
+            search_url,
+            headers=headers,
+            params=params, # Parâmetros vão na URL para GET
+            auth=auth,
+            timeout=30
+        )
+
+        # Verifica se o token ainda é válido (pode ter sido revogado)
+        if response.status_code == 401:
+             session.clear()
+             return jsonify({"error": "Sua sessão expirou ou o API Token tornou-se inválido. Faça login novamente.", "redirect": url_for('login')}), 401
+
+        # Verifica outros erros HTTP (como 400 Bad Request para JQL inválida)
+        response.raise_for_status() # Lança exceção para 4xx/5xx (exceto 401 tratado acima)
+
+        # Processa a resposta de sucesso
+        jira_response = response.json()
+        issues_raw = jira_response.get('issues', [])
+
+        # Simplifica os dados antes de enviar para o frontend
+        simplified_issues = []
+        for issue in issues_raw:
+            fields = issue.get('fields', {})
+            assignee_info = fields.get('assignee')
+            status_info = fields.get('status')
+            issuetype_info = fields.get('issuetype')
+
+            simplified_issues.append({
+                'key': issue.get('key'),
+                'url': f"{jira_instance_url}/browse/{issue.get('key')}",
+                'summary': fields.get('summary'),
+                'status': status_info.get('name') if status_info else 'N/A',
+                'assignee': assignee_info.get('displayName') if assignee_info else None, # Pode ser None
+                'issuetype': issuetype_info.get('name') if issuetype_info else 'N/A'
+            })
+
+        return jsonify({"issues": simplified_issues}), 200
+
+    except requests.exceptions.HTTPError as http_err:
+        status_code = http_err.response.status_code
+        error_message = f"Erro na busca ({status_code})"
+        details = ""
+        try:
+            # Tenta pegar a mensagem de erro específica do Jira (útil para JQL inválido)
+            error_details = http_err.response.json()
+            jira_errors = error_details.get('errorMessages', [])
+            if jira_errors:
+                 error_message += f": {', '.join(jira_errors)}"
+                 details = ', '.join(jira_errors) # Guarda detalhes para possível uso no JS
+            # Adiciona erros de campos específicos se houver (raro em busca, mas possível)
+            field_errors = error_details.get('errors', {})
+            if field_errors:
+                 error_message += f" Errors: {field_errors}"
+
+        except ValueError: # Se a resposta de erro não for JSON
+            error_message += f": {http_err.response.text[:200]}..." # Limita tamanho
+
+        print(f"Erro HTTP ao buscar issues: {error_message}")
+        # Retorna detalhes no erro para o JS poder checar se é JQL inválido
+        return jsonify({"error": error_message, "details": details}), status_code
+
+    except requests.exceptions.RequestException as req_err:
+        print(f"Erro de Rede/Requisição ao buscar issues: {req_err}")
+        return jsonify({"error": f"Erro de comunicação ao buscar issues: {req_err}"}), 500
+    except Exception as e:
+        print(f"Erro inesperado no servidor ao buscar issues: {e}")
+        # Adiciona traceback para debug se necessário: import traceback; traceback.print_exc()
+        return jsonify({"error": f"Ocorreu um erro interno no servidor: {e}"}), 500
+
+# ... (restante do app.py, if __name__ == '__main__': etc.)
+
 @app.route('/create_issue', methods=['POST'])
 @login_required # Protege a API de criação de issue
 def create_jira_issue():

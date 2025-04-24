@@ -3,25 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Criar Issue no Jira</title>
+    <title>Criar e Buscar Issues no Jira</title>
     <style>
-        /* Estilos CSS - mantidos/adaptados do exemplo anterior */
-        body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: 20px auto; border: 1px solid #eee; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        /* Estilos CSS (combinando e adicionando para a busca) */
+        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: 20px auto; border: 1px solid #eee; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-        .user-info { font-size: 0.9em; color: #555; }
-        .user-info code { background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px;}
-        .logout-btn { background: #dc3545; color: white; padding: 5px 10px; border: none; border-radius: 3px; text-decoration: none; font-size: 0.9em; }
+        .user-info { font-size: 0.9em; color: #555; text-align: right; }
+        .user-info code { background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; display: inline-block; margin-top: 3px;}
+        .logout-btn { background: #dc3545; color: white; padding: 5px 10px; border: none; border-radius: 3px; text-decoration: none; font-size: 0.9em; margin-top: 5px; display: inline-block;}
         .logout-btn:hover { background: #c82333; }
         label { display: block; margin-top: 10px; font-weight: bold; }
         input[type="text"], textarea { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; }
-        textarea { min-height: 100px; resize: vertical; }
-        button#submit-button { background-color: #0052cc; color: white; padding: 10px 15px; border: none; border-radius: 3px; cursor: pointer; margin-top: 15px; font-size: 1em; }
+        textarea { min-height: 80px; resize: vertical; } /* Reduzido um pouco */
+        button { cursor: pointer; border-radius: 3px; padding: 10px 15px; font-size: 1em; border: none; margin-top: 15px;}
+        button#submit-button { background-color: #0052cc; color: white; }
         button#submit-button:hover { background-color: #0065ff; }
         button#submit-button:disabled { background-color: #ccc; cursor: not-allowed;}
-        #status { margin-top: 15px; padding: 10px; border-radius: 3px; word-wrap: break-word; }
+        button#search-button { background-color: #28a745; color: white; } /* Botão de busca verde */
+        button#search-button:hover { background-color: #218838; }
+        button#search-button:disabled { background-color: #ccc; cursor: not-allowed;}
+
+        #status, #search-status { margin-top: 15px; padding: 10px; border-radius: 3px; word-wrap: break-word; }
         .success { background-color: #e3fcef; color: #064; border: 1px solid #74cca8; }
         .error { background-color: #ffebe6; color: #bf2600; border: 1px solid #ff8f73; }
-        /* Adiciona estilos para flash messages também aqui */
+        .info { background-color: #e7f3ff; color: #0052cc; border: 1px solid #cce0ff; } /* Para mensagens informativas */
+
+        /* Estilos para a tabela de resultados */
+        #search-results-table {
+            width: 100%;
+            margin-top: 15px;
+            border-collapse: collapse; /* Junta as bordas */
+        }
+        #search-results-table th, #search-results-table td {
+            border: 1px solid #ddd; /* Borda cinza claro */
+            padding: 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+        #search-results-table th {
+            background-color: #f2f2f2; /* Fundo cinza claro para cabeçalho */
+            font-weight: bold;
+        }
+        #search-results-table tr:nth-child(even) {
+            background-color: #f9f9f9; /* Linhas alternadas */
+        }
+         #search-results-table td a { color: #0052cc; text-decoration: none; }
+         #search-results-table td a:hover { text-decoration: underline; }
+
+        /* Layout em duas colunas (opcional, para telas maiores) */
+        .container { display: flex; flex-wrap: wrap; gap: 30px; }
+        .column { flex: 1; min-width: 300px; } /* Cada coluna ocupa espaço igual, mínimo 300px */
+
+        /* Mensagens Flash */
         .flash-messages { margin-bottom: 15px; }
         .flash { padding: 10px; margin-bottom: 10px; border-radius: 3px; border: 1px solid transparent; }
         .flash-success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
@@ -32,7 +65,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>Criar Nova Issue no Jira</h1>
+        <h2>Criador/Buscador de Issues Jira</h2>
         {% if user_info and user_info.email %}
             <div class="user-info">
                 Logado como: {{ user_info.email }}<br>
@@ -42,7 +75,7 @@
         {% endif %}
     </div>
 
-    <!-- Área para exibir mensagens Flash -->
+    <!-- Mensagens Flash -->
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             <div class="flash-messages">
@@ -53,93 +86,69 @@
         {% endif %}
     {% endwith %}
 
-    <form id="jira-form">
-        <label for="project-key">Chave do Projeto (ex: <code>PROJ</code>):</label>
-        <input type="text" id="project-key" name="project-key" required placeholder="PROJ">
+    <div class="container">
+        <!-- Coluna 1: Criar Issue -->
+        <div class="column">
+            <h3>Criar Nova Issue</h3>
+            <form id="jira-form">
+                <label for="project-key">Chave do Projeto (ex: <code>PROJ</code>):</label>
+                <input type="text" id="project-key" name="project-key" required placeholder="PROJ">
 
-        <label for="issue-type-id">ID do Tipo de Issue (ex: <code>10001</code>):</label>
-        <input type="text" id="issue-type-id" name="issue-type-id" required placeholder="10001">
-        <small>Nota: Você precisa encontrar o ID correto para o seu tipo de issue.</small>
+                <label for="issue-type-id">ID do Tipo de Issue (ex: <code>10001</code>):</label>
+                <input type="text" id="issue-type-id" name="issue-type-id" required placeholder="10001">
+                <small>Use a API v3 para criar. Encontre o ID na sua instância.</small>
 
-        <label for="summary">Resumo (Título da Issue):</label>
-        <input type="text" id="summary" name="summary" required>
+                <label for="summary">Resumo (Título da Issue):</label>
+                <input type="text" id="summary" name="summary" required>
 
-        <label for="description">Descrição:</label>
-        <textarea id="description" name="description"></textarea>
+                <label for="description">Descrição:</label>
+                <textarea id="description" name="description"></textarea>
 
-        <button type="submit" id="submit-button">Criar Issue</button>
-    </form>
+                <button type="submit" id="submit-button">Criar Issue (API v3)</button>
+            </form>
+            <div id="status"></div>
+        </div>
 
-    <div id="status"></div>
+        <!-- Coluna 2: Buscar Issues -->
+        <div class="column">
+            <h3>Buscar Issues (API v2)</h3>
+            <form id="search-form">
+                <label for="jql-query">Consulta JQL:</label>
+                <textarea id="jql-query" name="jql-query" required placeholder="Ex: project = PROJ AND status = 'To Do' ORDER BY created DESC"></textarea>
+                <small>Use a sintaxe JQL do Jira.</small>
 
+                <button type="submit" id="search-button">Buscar Issues (API v2)</button>
+            </form>
+            <div id="search-status"></div>
+            <div id="search-results">
+                <table id="search-results-table" style="display: none;"> <!-- Escondida inicialmente -->
+                    <thead>
+                        <tr>
+                            <th>Chave</th>
+                            <th>Resumo</th>
+                            <th>Tipo</th>
+                            <th>Status</th>
+                            <th>Responsável</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Linhas serão adicionadas aqui pelo JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+<!-- Define as variáveis de configuração com URLs do Flask ANTES de carregar o script -->
     <script>
-        const form = document.getElementById('jira-form');
-        const statusDiv = document.getElementById('status');
-        const submitButton = document.getElementById('submit-button');
-
-        form.addEventListener('submit', function(event) {
-            event.preventDefault();
-            statusDiv.textContent = 'Enviando...';
-            statusDiv.className = '';
-            submitButton.disabled = true;
-
-            const formData = {
-                projectKey: document.getElementById('project-key').value.trim(),
-                issueTypeId: document.getElementById('issue-type-id').value.trim(),
-                summary: document.getElementById('summary').value.trim(),
-                description: document.getElementById('description').value.trim()
-            };
-
-            fetch("{{ url_for('create_jira_issue') }}", { // Usa url_for para gerar a URL correta
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(formData)
-            })
-            .then(response => {
-                // Verificamos se a resposta indica que precisamos redirecionar (sessão inválida)
-                 if (response.status === 401) {
-                      return response.json().then(data => {
-                          // Se o backend enviou uma URL de redirecionamento
-                          if (data && data.redirect) {
-                               window.location.href = data.redirect; // Redireciona o usuário para a página de login
-                          }
-                          // Lança um erro para ser pego pelo .catch
-                          throw new Error(data.error || "Sessão inválida. Por favor, faça login novamente.");
-                      });
-                 }
-                 // Caso contrário, processa como antes
-                 return response.json().then(data => ({
-                    ok: response.ok,
-                    status: response.status,
-                    data: data
-                 }));
-            })
-            .then(result => {
-                if (result.ok) {
-                    showStatus(`Sucesso! ${result.data.message} <a href="${result.data.issueUrl}" target="_blank">Ver Issue</a>`, 'success');
-                    form.reset();
-                } else {
-                    showStatus(`Erro ${result.status}: ${result.data.error || 'Erro desconhecido do servidor.'}`, 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Erro ao criar issue:', error);
-                // Não redireciona aqui, apenas mostra o erro. O redirecionamento 401 já foi tratado.
-                showStatus(`Erro: ${error.message}`, 'error');
-            })
-            .finally(() => {
-                submitButton.disabled = false;
-            });
-        });
-
-        function showStatus(message, type) {
-            statusDiv.innerHTML = message;
-            statusDiv.className = type;
-        }
+        const config = {
+        createIssueUrl: "{{ url_for('create_jira_issue') }}",
+        searchIssuesUrl: "{{ url_for('search_jira_issues') }}",
+        loginUrl: "{{ url_for('login') }}"
+        };
     </script>
-
+     <!-- Carrega o arquivo JavaScript externo -->
+     <script src="{{ url_for('static', filename='script.js') }}"></script>
+   
 </body>
 </html>
