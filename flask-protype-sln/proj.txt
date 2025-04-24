@@ -1,0 +1,9 @@
+jira-creator/
+├── app.py           # Servidor Flask com login/logout
+├── templates/
+│   ├── index.html   # Formulário de criação de issue (protegido)
+│   └── login.html   # Formulário de login
+│   └── base.html    # (Opcional) Template base para evitar repetição
+├── requirements.txt # Dependências
+├── .env             # APENAS para FLASK_SECRET_KEY
+└── .gitignore
